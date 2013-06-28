@@ -1,5 +1,12 @@
 README
 
+I created this code for Prof. Jeff Leek's Data Analysis Coursera course.
+
+Here is my Coursera profile:
+
+https://www.coursera.org/user/i/62da43c330791faf1444ba89f764e988
+
+
 This code predicts the activity that a participant was performing while wearing a Samsung Galaxy S2 smartphone. The activities are WALKING, WALKING_UPSTAIRS, WALKING_DOWNSTAIRS, SITTING, STANDING, and LAYING.
 
 The data comes from the UCI Machine Learning Repository.
