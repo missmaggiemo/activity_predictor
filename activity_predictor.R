@@ -2,9 +2,9 @@
 #a Samsung Galaxy S2 smartphone. The activities are WALKING, WALKING_UPSTAIRS,
 #WALKING_DOWNSTAIRS, SITTING, STANDING, and LAYING.
 
-#The data comes from here: http://archive.ics.uci.edu/ml/datasets/Human+Activity+Recognition+Using+Smartphones
+#The data comes from here: http://archive.ics.uci.edu/ml/datasets/Human+Activity+Recognition+Using+Smartphones .
 
-#Updated 6/27/13
+#Updated 2013-08-30
 
 #Load data. If you have not downloaded the data, please see the README file.
 
@@ -23,15 +23,20 @@ sum(is.na(samsungData))
 
 #No NAs! Woo hoo!
 
-length(unique(names(samsungData)))
+sum(duplicated(names(samsungData)))
 
 #There are some repeats in the names of the columns.
 
+for(name in unique(names(samsungData))){
+  if(length(which(names(samsungData)==name)) > 1){
+    print(name)
+    print(which(names(samsungData)==name))
+  }
+}
+
 #Are the columns themselves repeats?
 
-#Fore example, columns 461:474 and 475:488 have the same names.
-
-sum(samsungData[,461:474] - samsungData[,475:488])
+sum(duplicated(samsungData))
 
 #No, they are not simply repeats. We need to rename them. Moreover, the names
 #are messy and full of "()" and ",", so let's rename them all.
@@ -152,7 +157,31 @@ forest.cv <- rfcv(samsungTrain[1:561], as.factor(samsungTrain$activity))
 
 with(forest.cv, plot(n.var, error.cv, log="x", pch=19, xlab="Number of Variables Used", ylab="CV Error", main="Cross-Validation Error vs. Number of Variables"))
 
+
+plot = ggplot(forestcv.frame, aes(x = n.var, y = error.cv)) + 
+    geom_point(aes(size=40)) + 
+    scale_x_log10(breaks = c(1,2,5,10,50,100,300,500)) +
+    theme_bw() +
+    theme(legend.position = "none", 
+          axis.text.x = element_text(size = 40),
+          axis.title.x = element_text(size = 40), 
+          axis.text.y = element_text(size = 40),
+          axis.title.y = element_text(size = 40),
+          plot.title = element_text(size = 40)) +
+    labs(list(title="Cross-Validation Error vs. Number of Variables", x="Number of Variables Used", y="CV Error"))
+
+jpeg(filename = "Forest CV.jpg", height = 1000, width = 1000, pointsize = 20, quality = 100)
+plot
+dev.off()
+
 #The more variables, the better?
+
+set.seed(306134)
+
+forest.tuned = randomForest(samsungTrain[1:561], as.factor(samsungTrain$activity), mtry = 92)
+
+print(forest.tuned)
+
 
 #Just to be sure that we're not overfitting, let's get the most important variables:
 
@@ -160,19 +189,21 @@ varImpPlot(forest)
 
 importance(forest) -> import
 
-cbind(names(samsungTrain[,1:561]), import[1:561,]) -> import.names
+import.names = data.frame(name = names(samsungTrain[,1:561]), import = as.numeric(import[1:561,]))
 
-import.names[which(import>30),] #10 most important variables
+import.names = import.names[order(import.names$import, decreasing=TRUE),]
+
+most_import = import.names[1:50,1] #50 most important variables
 
 #Forest with 10 most important variables, in an effort not to overfit the data:
 
 set.seed(306133)
 
-forest.rerun <- randomForest(samsungTrain[,which(import>30)], as.factor(samsungTrain$activity))
+forest.rerun <- randomForest(samsungTrain[,most_import], as.factor(samsungTrain$activity))
 
 print(forest.rerun)
 
-tuneRF(samsungTrain[,which(import>30)], as.factor(samsungTrain$activity))
+tuneRF(samsungTrain[,most_import], as.factor(samsungTrain$activity))
 
 #"forest.rerun" is already using mtry=6, so I won't bother building another
 #model based on that.
@@ -221,7 +252,7 @@ missClassToo(samsungValid$activity, predBlank) -> blankError
 
 blankError
 
-BinomError95(BlankError, length(samsungValid$activity))
+BinomError95(blankError, length(samsungValid$activity))
 
 #"tree": one standard tree.
 
@@ -247,6 +278,19 @@ forestError
 
 BinomError95(forestError, length(samsungValid$activity))
 
+
+#forest.tuned: a rerun of randomForest sampling 92 variables at each split.
+
+predict(forest.tuned, samsungValid, type="class") -> predForest.tuned
+
+table(predForest.tuned, samsungValid$activity)
+
+missClassToo(samsungValid$activity, predForest.tuned) -> tunedError
+
+tunedError
+
+BinomError95(tunedError, length(samsungValid$activity))
+
 #"forest.rerun": a rerun of randomForest using only the most important variables.
 
 predict(forest.rerun, samsungValid, type="class") -> predForest.rerun
@@ -260,12 +304,30 @@ rerunError
 BinomError95(rerunError, length(samsungValid$activity))
 
 
-
 #All prediction models are better than the benchmark.
 
-predFunction <- c("predBlank", "predTree", "predForest", "predForest.rerun"); misclassRate <- c(missClassToo(samsungValid$activity, predBlank), missClassToo(samsungValid$activity, predTree), missClassToo(samsungValid$activity, predForest), missClassToo(samsungValid$activity, predForest.rerun))
+predFunction <- c("predBlank", "predForest", "predForest.rerun", "predForest.tuned"); 
+misclassRate <- c(missClassToo(samsungValid$activity, predBlank), 
+  missClassToo(samsungValid$activity, predForest), 
+  missClassToo(samsungValid$activity, predForest.tuned),
+  missClassToo(samsungValid$activity, predForest.rerun));
+misclassRate = data.frame(predFunction, misclassRate)
 
-barplot(misclassRate, names.arg=predFunction, main="Misclassification Rate for Each Model")
+plot = ggplot(misclassRate, aes(x=predFunction, y= misclassRate)) +
+geom_bar(aes(fill=predFunction)) +
+theme_bw() +
+theme(axis.text.x = element_text(size = 40), 
+    axis.text.y = element_text(size = 40),
+    legend.position="none",
+    panel.grid.minor=element_blank(), 
+    panel.grid.major=element_blank(),
+    rect = element_blank()) +
+xlab("") + ylab("") 
+
+jpeg(filename = "Misclassification Rate.jpg", height = 1000, width = 1500, pointsize = 20, quality = 100)
+plot
+dev.off()
+
 
 #"forest" is the best model.
 
@@ -325,3 +387,50 @@ with(samsungTest, legend(x=c(-1, 0),y=c(-0.5,-1), ncol=2, x.intersp=0.3, y.inter
 with(samsungTest, plot(angle_X.gravityMean, angle_Y.gravityMean, col=as.factor(activity), main="Real Activity", xlab="angle_X.gravityMean", ylab="angle_Y.gravityMean"))
 with(samsungTest, legend(x=c(-1, 0),y=c(-0.5,-1), ncol=2, x.intersp=0.3, y.intersp=1, legend=unique(activity), col=unique(as.factor(activity)), pch=1, cex=0.8))
 
+#There's only one problem: This model is amazingly over-fit.
+
+
+#An attempt at correcting for over-fitting:
+
+
+#Create a correlation matrix.
+
+M = cor(data.frame(samsungTrain[,1:562], as.numeric(as.factor(as.vector(samsungTrain$activity)))))
+
+#Choose only the variables with at least a |correlation value with activity| = 0.8.
+
+which(M[,563] >= 0.8 | M[563,] <= -0.8) -> list
+
+#That list included the activity variable itself, so we take that out.
+
+list = list[1:37]
+
+list
+
+set.seed(306135)
+
+#Create a random forest model using only those variables.
+
+forest_lessfit = randomForest(samsungTrain[,list], as.factor(samsungTrain$activity))
+
+predTEST = predict(forest_lessfit, samsungTest, type="class")
+
+table(predTEST, samsungTest$activity)
+
+TESTerror = missClassToo(samsungTest$activity, predTEST)
+
+TESTerror
+
+BinomError95(TESTerror, length(samsungTest$activity))
+
+#This model doesn't do as well with the test data, but the real test would be
+#applying it to more data. I would expect this model to win out when applied
+#to many more data sets.
+
+par(mfrow=c(1,2))
+
+plot(samsungTest$angle_X.gravityMean, samsungTest$angle_Y.gravityMean, col=as.factor(predTEST), main="Predicted Activity", xlab="angle_X.gravityMean", ylab="angle_Y.gravityMean")
+with(samsungTest, legend(x=c(-1, 0),y=c(-0.5,-1), ncol=2, x.intersp=0.3, y.intersp=1, legend=unique(activity), col=unique(as.factor(activity)), pch=1, cex=0.8))
+
+with(samsungTest, plot(angle_X.gravityMean, angle_Y.gravityMean, col=as.factor(activity), main="Real Activity", xlab="angle_X.gravityMean", ylab="angle_Y.gravityMean"))
+with(samsungTest, legend(x=c(-1, 0),y=c(-0.5,-1), ncol=2, x.intersp=0.3, y.intersp=1, legend=unique(activity), col=unique(as.factor(activity)), pch=1, cex=0.8))
